@@ -1,6 +1,6 @@
 {
   "name": "@dudong2/pi-context",
-  "version": "0.1.16-hardening.1",
+  "version": "0.1.0",
   "description": "Hardened searchable SQLite sidecar for oversized Pi tool output",
   "keywords": ["pi", "pi-package", "context", "sqlite"],
   "homepage": "https://github.com/dudong2/pi-context#readme",

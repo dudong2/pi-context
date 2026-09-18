@@ -1,16 +1,12 @@
 # @dudong2/pi-context
 
-## 0.1.16-hardening.1
-
-- Include prebuilt `dist/` artifacts so Pi's Git installer works with `npm install --omit=dev`.
-- Remove the dev-dependency-based `prepare` build from installation.
-
-## 0.1.16-hardening.0
+## 0.1.0
 
 - Forked `@spences10/pi-context@0.1.16` into an independent package.
 - Added worker-isolated linear-time redaction and fail-closed capture.
 - Enforced structured receipt identity, mixed-content preservation, scoped source search, bounded retrieval, immediate quotas, explicit DB closure, and retrieval accounting.
 - Removed runtime coupling to upstream redaction, settings, SQLite helper, modal UI, and eval packages.
+- Included prebuilt `dist/` artifacts for Pi's `npm install --omit=dev` Git installer.
 
 ## Upstream history (`@spences10/pi-context`)
 
