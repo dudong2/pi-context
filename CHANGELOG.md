@@ -136,7 +136,7 @@
 - d158bf5: Default context_export to managed sidecar export directory
   with retention cleanup for old exported files.
 
-## 0.1.0
+## Upstream 0.1.0
 
 ### Minor Changes
 
