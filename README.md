@@ -46,7 +46,8 @@ pi install .
 ```
 
 The package entry point is `dist/index.js` and is declared in `package.json` as a
-Pi extension.
+Pi extension. Tagged Git releases include prebuilt `dist/` artifacts because
+Pi installs Git packages with production dependencies only.
 
 ## Tools
 

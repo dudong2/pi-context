@@ -1,5 +1,10 @@
 # @dudong2/pi-context
 
+## 0.1.16-hardening.1
+
+- Include prebuilt `dist/` artifacts so Pi's Git installer works with `npm install --omit=dev`.
+- Remove the dev-dependency-based `prepare` build from installation.
+
 ## 0.1.16-hardening.0
 
 - Forked `@spences10/pi-context@0.1.16` into an independent package.
