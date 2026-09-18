@@ -1,0 +1,53 @@
+{
+  "name": "@dudong2/pi-context",
+  "version": "0.1.16-hardening.0",
+  "description": "Hardened searchable SQLite sidecar for oversized Pi tool output",
+  "keywords": ["pi", "pi-package", "context", "sqlite"],
+  "homepage": "https://github.com/dudong2/pi-context#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/dudong2/pi-context.git"
+  },
+  "license": "MIT",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./store": {
+      "types": "./dist/store.d.ts",
+      "import": "./dist/store.js"
+    }
+  },
+  "files": ["dist", "README.md", "LICENSE"],
+  "engines": { "node": ">=24.15.0" },
+  "pi": { "extensions": ["./dist/index.js"] },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json && cp src/schema.sql dist/schema.sql",
+    "prepare": "npm run build",
+    "typecheck": "tsc --noEmit",
+    "test": "npm run build && vitest run",
+    "test:unit": "vitest run",
+    "test:coverage": "npm run build && vitest run --coverage",
+    "bench:redaction": "npm run build && node scripts/benchmark-redaction.mjs",
+    "lint": "eslint src test",
+    "check": "npm run test && npm run typecheck && npm run lint"
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "*",
+    "typebox": "*"
+  },
+  "devDependencies": {
+    "@earendil-works/pi-coding-agent": "0.84.2",
+    "@types/node": "^25.0.0",
+    "@vitest/coverage-v8": "4.1.11",
+    "eslint": "^9.0.0",
+    "typescript": "^6.0.0",
+    "typescript-eslint": "^8.0.0",
+    "typebox": "^1.1.5",
+    "vitest": "4.1.11"
+  }
+}
