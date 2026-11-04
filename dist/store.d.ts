@@ -18,6 +18,7 @@ export declare class ContextStore {
     scoped_filter(alias: string, options?: ContextScopeOptions): ScopedFilter;
     private find_duplicate_source;
     store(input: StoreContextInput): StoredContextOutput | null;
+    private enforce_storage_limit;
     list(options?: ContextScopeOptions & {
         source_id?: string;
         tool_name?: string;

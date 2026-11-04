@@ -40,7 +40,6 @@
     "typebox": "*"
   },
   "dependencies": {
-    "@spences10/pi-redact": "0.0.15",
     "@spences10/pi-settings": "0.1.0",
     "@spences10/pi-sqlite-core": "0.0.2",
     "@spences10/pi-tui-modal": "0.0.24"

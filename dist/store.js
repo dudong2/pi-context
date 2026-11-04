@@ -1,4 +1,4 @@
-import { redact_text } from '@spences10/pi-redact';
+import { redact_text } from './redaction.js';
 import { with_sqlite_transaction } from '@spences10/pi-sqlite-core';
 import { createHash, randomUUID } from 'node:crypto';
 import { existsSync, mkdirSync } from 'node:fs';
@@ -113,6 +113,10 @@ export class ContextStore {
     store(input) {
         const redaction = redact_text(input.text);
         const text = redaction.redacted;
+        const tool_name = redact_text(input.tool_name).redacted;
+        const input_summary = input.input_summary == null
+            ? null
+            : redact_text(input.input_summary).redacted;
         if (!input.force &&
             !should_index_text(text, {
                 max_bytes: this.max_bytes,
@@ -148,14 +152,14 @@ export class ContextStore {
                 capture_max_bytes: this.max_bytes,
                 capture_max_lines: this.max_lines,
             };
-            const receipt = summarize_source(provisional, input.tool_name);
+            const receipt = summarize_source(provisional, tool_name);
             const returned_bytes = Buffer.byteLength(receipt, 'utf8');
             with_sqlite_transaction(this.db, () => {
                 this.db
                     .prepare('UPDATE context_sources SET returned_byte_count = returned_byte_count + ? WHERE id = ?')
                     .run(returned_bytes, duplicate.id);
             }, { operation: 'Update context receipt bytes' });
-            return { ...provisional, receipt, returned_bytes };
+            return this.enforce_storage_limit({ ...provisional, receipt, returned_bytes });
         }
         const source_id = `ctx_${Date.now().toString(36)}_${randomUUID().slice(0, 8)}`;
         const chunks = chunk_text(text, source_id);
@@ -173,8 +177,8 @@ export class ContextStore {
         const update_returned = this.db.prepare(`
 			UPDATE context_sources SET returned_byte_count = ? WHERE id = ?
 		`);
-        return with_sqlite_transaction(this.db, () => {
-            insert.run(source_id, session_id, project_path, input.tool_name, input.input_summary ?? null, created_at, bytes, lines, content_hash, preview_bytes);
+        const stored = with_sqlite_transaction(this.db, () => {
+            insert.run(source_id, session_id, project_path, tool_name, input_summary, created_at, bytes, lines, content_hash, preview_bytes);
             for (const chunk of chunks) {
                 insert_chunk.run(chunk.id, chunk.source_id, chunk.ordinal, chunk.title, chunk.content, chunk.byte_count);
             }
@@ -192,11 +196,20 @@ export class ContextStore {
                 capture_max_bytes: this.max_bytes,
                 capture_max_lines: this.max_lines,
             };
-            const receipt = summarize_source(provisional, input.tool_name);
+            const receipt = summarize_source(provisional, tool_name);
             const returned_bytes = Buffer.byteLength(receipt, 'utf8');
             update_returned.run(returned_bytes, source_id);
             return { ...provisional, receipt, returned_bytes };
         }, { operation: 'Store context output' });
+        return this.enforce_storage_limit(stored);
+    }
+    enforce_storage_limit(stored) {
+        const max_bytes = parse_context_retention_policy().max_bytes;
+        if (max_bytes === null)
+            return stored;
+        this.purge_to_max_stored_bytes(max_bytes);
+        // Do not return a receipt pointing to a source the quota just evicted.
+        return this.chunk_summary(stored.source_id, { global: true }) ? stored : null;
     }
     list(options = {}) {
         const limit = Math.max(1, Math.min(options.limit ?? 10, 50));
@@ -285,9 +298,7 @@ export class ContextStore {
         return results;
     }
     search_match(match, options, limit) {
-        const scoped = options.source_id
-            ? { where: [], params: [] }
-            : this.scoped_filter('context_sources', options);
+        const scoped = this.scoped_filter('context_sources', options);
         const filters = [...scoped.where];
         const params = [match, ...scoped.params];
         if (options.source_id) {
@@ -383,7 +394,8 @@ export class ContextStore {
         return context_store_purge_with_details(this, options);
     }
     close() {
-        this.db.close();
+        if (this.db.isOpen)
+            this.db.close();
     }
 }
 //# sourceMappingURL=store.js.map
