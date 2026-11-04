@@ -1,11 +1,19 @@
 import { Type } from 'typebox';
 import { format_stats } from '../context-format.js';
 import { scope_from_context } from '../context-scope.js';
-import { limit_chat_output } from '../output-limits.js';
 import { get_context_store } from '../store.js';
+import { context_stats_output_schema, context_tool_namespace, } from './output-schemas.js';
 export function register_context_stats_tool(pi) {
     pi.registerTool({
         name: 'context_stats',
+        namespace: context_tool_namespace,
+        outputSchema: context_stats_output_schema,
+        exposure: 'deferred',
+        annotations: {
+            readOnlyHint: true,
+            destructiveHint: false,
+            openWorldHint: false,
+        },
         label: 'Context Stats',
         description: 'Show byte accounting for the local SQLite context sidecar.',
         parameters: Type.Object({
@@ -13,14 +21,15 @@ export function register_context_stats_tool(pi) {
                 description: 'Show stats across all indexed sources instead of current project/session scope.',
             })),
         }),
-        async execute(...args) {
-            const [, params, , , ctx] = args;
+        async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
             const scope = scope_from_context(ctx);
             const stats = get_context_store(scope).stats(params.global === true ? { global: true } : scope);
-            const limited = limit_chat_output(format_stats(stats));
             return {
-                content: [{ type: 'text', text: limited.text }],
+                content: [
+                    { type: 'text', text: format_stats(stats) },
+                ],
                 details: stats,
+                structuredContent: { ...stats },
             };
         },
     });

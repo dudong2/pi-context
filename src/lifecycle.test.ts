@@ -60,6 +60,126 @@ describe('register_context_lifecycle', () => {
 		expect(is_context_sidecar_enabled()).toBe(false);
 	});
 
+	it.each([
+		['line', 'diagnostic detail\n'.repeat(400)],
+		['byte', 'diagnostic detail '.repeat(2000)],
+	])(
+		'leaves failed results above the %s threshold unchanged',
+		async (_limit, text) => {
+			process.env.MY_PI_CONTEXT_DB = temp_db();
+			const { pi, hooks } = fake_pi();
+			register_context_lifecycle(pi);
+			const event = {
+				toolName: 'bash',
+				isError: true,
+				content: [{ type: 'text', text: `failure-marker\n${text}` }],
+			};
+			const original = structuredClone(event);
+
+			expect(
+				await hooks.get('tool_result')![0](event),
+			).toBeUndefined();
+			expect(event).toEqual(original);
+			expect(
+				get_context_store().search('failure-marker', {
+					global: true,
+				}),
+			).toHaveLength(0);
+		},
+	);
+
+	it.each(['bash', 'read', 'mcp__docs__extract', 'codemode'])(
+		'leaves nested %s output intact without indexing it',
+		async (toolName) => {
+			process.env.MY_PI_CONTEXT_DB = temp_db();
+			const { pi, hooks } = fake_pi();
+			register_context_lifecycle(pi);
+			const event = {
+				toolName,
+				parentToolCallId: 'script-1',
+				content: [
+					{ type: 'text', text: 'nested-marker\n'.repeat(400) },
+				],
+				structuredContent: {
+					output: 'nested-marker\n'.repeat(400),
+					truncated: false,
+				},
+			};
+			const original = structuredClone(event);
+			expect(
+				await hooks.get('tool_result')![0](event),
+			).toBeUndefined();
+			expect(event).toEqual(original);
+			expect(get_context_store().stats().sources).toBe(0);
+		},
+	);
+
+	it('captures final codemode output and preserves images', async () => {
+		process.env.MY_PI_CONTEXT_DB = temp_db();
+		const { pi, hooks } = fake_pi();
+		register_context_lifecycle(pi);
+		const image = {
+			type: 'image',
+			data: 'eA==',
+			mimeType: 'image/png',
+		};
+		const result = (await hooks.get('tool_result')![0]({
+			toolName: 'codemode',
+			content: [
+				{ type: 'text', text: 'final-marker\n'.repeat(400) },
+				image,
+			],
+		})) as { content: unknown[] };
+		expect(result.content).toContainEqual(image);
+		expect(
+			get_context_store().search('final-marker', { global: true }),
+		).not.toHaveLength(0);
+	});
+
+	it('indexes the complete native MCP text rather than its chat preview', async () => {
+		process.env.MY_PI_CONTEXT_DB = temp_db();
+		const { pi, hooks } = fake_pi();
+		register_context_lifecycle(pi);
+		await hooks.get('tool_result')![0]({
+			toolName: 'mcp__docs__extract',
+			content: [{ type: 'text', text: 'truncated preview' }],
+			structuredContent: {
+				content: [
+					{
+						type: 'text',
+						text: `${'raw content\n'.repeat(400)}middle-marker`,
+					},
+				],
+			},
+		});
+		expect(
+			get_context_store().search('middle-marker', { global: true }),
+		).toHaveLength(1);
+	});
+
+	it('redacts native structured output before persistence', async () => {
+		process.env.MY_PI_CONTEXT_DB = temp_db();
+		const { pi, hooks } = fake_pi();
+		register_context_lifecycle(pi);
+		await hooks.get('tool_result')![0]({
+			toolName: 'bash',
+			content: [
+				{ type: 'text', text: 'chat preview omits the middle' },
+			],
+			structuredContent: {
+				output: `${'safe-marker\n'.repeat(400)}{"password":"synthetic-benchmark-secret"}`,
+				truncated: false,
+			},
+		});
+		const store = get_context_store();
+		const source = store.list({ global: true })[0]!;
+		const text = store.export_content(source.source_id, undefined, {
+			global: true,
+		}).content;
+		expect(text).toContain('[REDACTED:');
+		expect(text).not.toContain('synthetic-benchmark-secret');
+	});
+
 	it('indexes only oversized text tool results for the active scope', async () => {
 		process.env.MY_PI_CONTEXT_DB = temp_db();
 		const { pi, hooks } = fake_pi();
@@ -106,24 +226,10 @@ describe('register_context_lifecycle', () => {
 			get_context_store().search('needle-token', { global: true }),
 		).toHaveLength(1);
 
-		const marker_payload = `quoted historical receipt: [context-sidecar]\nmarker-token\n${'x\n'.repeat(400)}`;
-		const marker_replacement = (await tool_result(
-			{
-				toolName: 'bash',
-				input: { command: 'history' },
-				content: [{ type: 'text', text: marker_payload }],
-			},
-			{ cwd: '/repo', sessionManager: { getSessionId: () => 's1' } },
-		)) as { content: Array<{ text: string }> };
-
-		expect(marker_replacement.content[0].text).not.toBe(marker_payload);
-		expect(
-			get_context_store().search('marker-token', { global: true }),
-		).toHaveLength(1);
-
 		const team_replacement = (await tool_result(
 			{
 				toolName: 'team',
+				isError: false,
 				input: {
 					action: 'session_inbox',
 					include_read: true,
@@ -148,62 +254,5 @@ describe('register_context_lifecycle', () => {
 				global: true,
 			}),
 		).toHaveLength(1);
-	});
-
-	it('fails closed when persistence fails', async () => {
-		const invalid_db_path = mkdtempSync(join(tmpdir(), 'pi-context-invalid-'));
-		dirs.push(invalid_db_path);
-		process.env.MY_PI_CONTEXT_DB = invalid_db_path;
-		const { pi, hooks } = fake_pi();
-		register_context_lifecycle(pi);
-		const payload = `failure-canary\n${'secret output\n'.repeat(4000)}`;
-
-		const replacement = (await hooks.get('tool_result')![0](
-			{
-				toolName: 'bash',
-				input: { command: 'generate' },
-				content: [{ type: 'text', text: payload }],
-			},
-			{ cwd: '/repo', sessionManager: { getSessionId: () => 's1' } },
-		)) as { content: Array<{ text: string }> };
-
-		const returned = replacement.content.map((item) => item.text).join('\n');
-		expect(returned).toContain('withheld');
-		expect(returned).not.toContain('failure-canary');
-		expect(Buffer.byteLength(returned, 'utf8')).toBeLessThanOrEqual(50 * 1024);
-	});
-
-	it('preserves non-text items and their relative order', async () => {
-		process.env.MY_PI_CONTEXT_DB = temp_db();
-		const { pi, hooks } = fake_pi();
-		register_context_lifecycle(pi);
-		const first_image = {
-			type: 'image',
-			data: 'first-image',
-			mimeType: 'image/png',
-		};
-		const second_image = {
-			type: 'image',
-			data: 'second-image',
-			mimeType: 'image/png',
-		};
-
-		const replacement = (await hooks.get('tool_result')![0](
-			{
-				toolName: 'read',
-				input: { path: 'large.png' },
-				content: [
-					first_image,
-					{ type: 'text', text: `mixed-token\n${'x\n'.repeat(400)}` },
-					second_image,
-				],
-			},
-			{ cwd: '/repo', sessionManager: { getSessionId: () => 's1' } },
-		)) as { content: Array<{ type: string; text?: string; data?: string }> };
-
-		expect(replacement.content[0]).toEqual(first_image);
-		expect(replacement.content[1]).toMatchObject({ type: 'text' });
-		expect(replacement.content[1].text).toContain('[context-sidecar]');
-		expect(replacement.content[2]).toEqual(second_image);
 	});
 });

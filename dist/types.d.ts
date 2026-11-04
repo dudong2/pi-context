@@ -44,7 +44,6 @@ export interface StoredContextOutput {
     project_path: string | null;
     session_id: string | null;
     deduped?: boolean;
-    retained?: boolean;
     capture_max_bytes?: number;
     capture_max_lines?: number;
 }

@@ -1,27 +1,22 @@
-import type {
-	ExtensionCommandContext,
-	ToolResultEvent,
-} from '@earendil-works/pi-coding-agent';
+import type { ExtensionCommandContext } from '@earendil-works/pi-coding-agent';
 import type { ContextScopeOptions } from './store.js';
-import { redact_text } from './redaction.js';
 
 export function is_text_content(
-	item: ToolResultEvent['content'][number],
+	item: unknown,
 ): item is { type: 'text'; text: string } {
-	return item.type === 'text';
+	return (
+		!!item &&
+		typeof item === 'object' &&
+		(item as { type?: unknown }).type === 'text' &&
+		typeof (item as { text?: unknown }).text === 'string'
+	);
 }
 
-export function summarize_tool_input(
-	input: object | null | undefined,
-): string | null {
-	if (!input) return null;
+export function summarize_tool_input(input: unknown): string | null {
+	if (!input || typeof input !== 'object') return null;
 	try {
 		const json = JSON.stringify(input);
-		if (!json) return null;
-		const redacted = redact_text(json).redacted;
-		return redacted.length > 500
-			? `${redacted.slice(0, 497)}...`
-			: redacted;
+		return json.length > 500 ? `${json.slice(0, 497)}...` : json;
 	} catch {
 		return null;
 	}
@@ -33,8 +28,9 @@ export function should_skip_tool(tool_name: string): boolean {
 	//   recurse and make the sidecar harder to reason about.
 	// - Team Mode lists are bounded at source, while unusually large full-detail
 	//   results use this generic overflow path so they do not flood model context.
-	// Structured, source-verified receipt details prevent duplicate capture;
-	// ordinary payload text is never trusted as a receipt marker.
+	// - Pi native MCP tool results use this generic overflow path like other
+	//   tools. Text that already holds a [context-sidecar] receipt is not
+	//   indexed again.
 	return tool_name.startsWith('context_');
 }
 

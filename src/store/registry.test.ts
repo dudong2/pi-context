@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
 import { temp_db } from '../../test/support.js';
 import { ContextStore } from '../store.js';
 import {
@@ -50,19 +50,5 @@ describe('context store registry', () => {
 			second.search('alpha-registry', { project_path: '/project-a' }),
 		).toHaveLength(1);
 		second.close();
-	});
-
-	it('closes stores when the database path changes and on disable', () => {
-		const close = vi.spyOn(ContextStore.prototype, 'close');
-		set_context_sidecar_enabled(true, { db_path: temp_db('registry-a-') });
-		get_context_store(ContextStore);
-
-		set_context_sidecar_enabled(true, { db_path: temp_db('registry-b-') });
-		get_context_store(ContextStore);
-		expect(close).toHaveBeenCalledTimes(1);
-
-		set_context_sidecar_enabled(false);
-		expect(close).toHaveBeenCalledTimes(2);
-		close.mockRestore();
 	});
 });

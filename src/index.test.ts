@@ -11,7 +11,13 @@ import {
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import {
+	afterEach,
+	beforeEach,
+	describe,
+	expect,
+	it,
+} from 'vitest';
 import { temp_config, temp_db } from '../test/support.js';
 import context_sidecar, {
 	get_context_store,
@@ -98,12 +104,6 @@ function large_output(token = 'needle-token'): string {
 
 function source_id_from(text: string): string {
 	const match = text.match(/Source: (ctx_[^\n]+)/);
-	expect(match).not.toBeNull();
-	return match![1];
-}
-
-function first_chunk_id_from(text: string): string {
-	const match = text.match(/First chunk id: (ctx_[^\n]+)/);
 	expect(match).not.toBeNull();
 	return match![1];
 }
@@ -402,12 +402,12 @@ describe('context_sidecar extension', () => {
 		).toHaveLength(1);
 	});
 
-	it('does not re-index an existing context-sidecar receipt such as direct MCP storage', async () => {
+	it('does not re-index an existing context-sidecar receipt', async () => {
 		process.env.MY_PI_CONTEXT_DB = temp_db();
 		const fake = create_fake_pi();
 		context_sidecar(fake.pi);
 		const stored = get_context_store().store({
-			text: large_output('mcp-direct-token'),
+			text: large_output('receipt-token'),
 			tool_name: 'mcp__demo__large',
 			force: true,
 		});
@@ -417,20 +417,13 @@ describe('context_sidecar extension', () => {
 			await tool_result({
 				toolName: 'mcp__demo__large',
 				content: [{ type: 'text', text: stored!.receipt }],
-				details: {
-					contextSidecar: {
-						version: 1,
-						kind: 'receipt',
-						sourceId: stored!.source_id,
-					},
-				},
 			}),
 		).toBeUndefined();
 		expect(get_context_store().list({ global: true })).toHaveLength(
 			1,
 		);
 		expect(
-			get_context_store().search('mcp-direct-token', {
+			get_context_store().search('receipt-token', {
 				global: true,
 			}),
 		).toHaveLength(1);
@@ -446,7 +439,6 @@ describe('context_sidecar extension', () => {
 			content: [{ type: 'text', text: large_output('tool-token') }],
 		})) as ToolResult;
 		const source_id = source_id_from(replacement.content[0].text);
-		const first_chunk_id = first_chunk_id_from(replacement.content[0].text);
 
 		const search = await fake.tools
 			.get('context_search')!
@@ -468,7 +460,6 @@ describe('context_sidecar extension', () => {
 			.get('context_get')!
 			.execute('call-2', {
 				source_id,
-				chunk_id: first_chunk_id,
 			});
 		expect(get.content[0].text).toContain('tool-token');
 		expect(get.details).toMatchObject({ count: 1 });
@@ -619,7 +610,6 @@ describe('context_sidecar extension', () => {
 			.get('context_get')!
 			.execute('call-5', {
 				source_id,
-				chunk_id: '1',
 			});
 		expect(empty.content[0].text).toContain(
 			`Source ${source_id} was not found`,

@@ -54,21 +54,23 @@ export function relaxed_fts5_query(query) {
     return tokens.join(' OR ');
 }
 function normalized_fts_tokens(query) {
-    const normalized = [];
-    for (const raw_token of query.trim().split(/\s+/)) {
-        const token = raw_token.trim();
-        if (!token)
-            continue;
+    return query
+        .trim()
+        .split(/\s+/)
+        .map((token) => token.trim())
+        .filter(Boolean)
+        .map((token) => {
         const prefix = token.endsWith('*');
         const base = prefix ? token.slice(0, -1) : token;
-        const value = base
-            .replace(/["'(){}[\]^:./\\+-]/g, ' ')
-            .trim()
-            .replace(/\s+/g, ' ');
-        if (value)
-            normalized.push({ prefix, value });
-    }
-    return normalized;
+        return {
+            prefix,
+            value: base
+                .replace(/["'(){}[\]^:./\\+-]/g, ' ')
+                .trim()
+                .replace(/\s+/g, ' '),
+        };
+    })
+        .filter((token) => token.value.length > 0);
 }
 function format_fts_token(token) {
     const quoted = `"${token.value.replace(/"/g, '""')}"`;
@@ -196,18 +198,11 @@ export function summarize_source(result, tool_name) {
         result.first_chunk_id
             ? `First chunk id: ${result.first_chunk_id}`
             : undefined,
-        `Project: ${result.project_path ?? '(none)'}`,
-        `Session: ${result.session_id ?? '(none)'}`,
         ``,
-        `Next actions:`,
-        `- Search concise snippets first: context_search query:"..." source_id:"${result.source_id}"`,
-        `- Need surrounding context? context_get source_id:"${result.source_id}" chunk_id:"${result.first_chunk_id ?? '1'}" before:1 after:1 (before/after max 3)`,
-        `- Need broad/full JSON/log/script processing? context_export source_id:"${result.source_id}" then use rg/jq/Python on the file`,
-        `- Avoid full context_get without chunk_id unless you truly need all chunks in chat`,
-        `- List recent scoped sources: context_list`,
+        `Search snippets with context_search; use context_get for focused chunks or context_export for broad processing.`,
         ``,
         `Preview:`,
-        result.preview,
+        make_preview(result.preview, 8, 768),
     ]
         .filter((line) => line !== undefined)
         .join('\n');

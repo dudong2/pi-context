@@ -2,17 +2,27 @@ import type { ExtensionAPI } from '@earendil-works/pi-coding-agent';
 import { Type } from 'typebox';
 import { format_get_result } from '../context-format.js';
 import { scope_from_context } from '../context-scope.js';
-import { limit_chat_output } from '../output-limits.js';
 import {
 	cleanup_context_exports,
 	resolve_context_export_path,
 	write_context_export_file,
 } from '../export-files.js';
 import { get_context_store } from '../store.js';
+import {
+	context_export_output_schema,
+	context_tool_namespace,
+} from './output-schemas.js';
 
 export function register_context_export_tool(pi: ExtensionAPI): void {
 	pi.registerTool({
 		name: 'context_export',
+		namespace: context_tool_namespace,
+		outputSchema: context_export_output_schema,
+		annotations: {
+			readOnlyHint: false,
+			destructiveHint: true,
+			openWorldHint: false,
+		},
 		label: 'Context Export',
 		description:
 			'Export stored chunks from the local SQLite context sidecar to a file without returning chunk content. Prefer this for broad/full JSON/log/script processing; omit chunk_id when intentionally processing the full source offline.',
@@ -33,17 +43,13 @@ export function register_context_export_tool(pi: ExtensionAPI): void {
 				}),
 			),
 			before: Type.Optional(
-				Type.Integer({
-					minimum: 0,
-					maximum: 3,
+				Type.Number({
 					description:
 						'When chunk_id is set, include up to this many chunks before it (max 3). Prefer 1 first; omit chunk_id to export the full source.',
 				}),
 			),
 			after: Type.Optional(
-				Type.Integer({
-					minimum: 0,
-					maximum: 3,
+				Type.Number({
 					description:
 						'When chunk_id is set, include up to this many chunks after it (max 3). Prefer 1 first; omit chunk_id to export the full source.',
 				}),
@@ -55,16 +61,15 @@ export function register_context_export_tool(pi: ExtensionAPI): void {
 				}),
 			),
 		}),
-		async execute(...args) {
-			const [, params, , , ctx] = args;
+		async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
 			const scope = scope_from_context(ctx);
 			const store = get_context_store(scope);
 			const scope_options = {
+				...(params.global ? {} : scope),
 				global: params.global,
 				before: params.before,
 				after: params.after,
 			};
-			if (!params.global) Object.assign(scope_options, scope);
 			const exported = store.export_content(
 				params.source_id,
 				params.chunk_id,
@@ -75,17 +80,23 @@ export function register_context_export_tool(pi: ExtensionAPI): void {
 					params.source_id,
 					scope_options,
 				);
-				const limited = limit_chat_output(
-					format_get_result(
-						params.source_id,
-						params.chunk_id,
-						exported.chunks,
-						summary,
-					),
+				const message = format_get_result(
+					params.source_id,
+					params.chunk_id,
+					exported.chunks,
+					summary,
 				);
 				return {
-					content: [{ type: 'text' as const, text: limited.text }],
+					content: [{ type: 'text' as const, text: message }],
 					details: { count: 0, exported: false },
+					structuredContent: {
+						count: 0,
+						exported: false,
+						file_path: null,
+						bytes: 0,
+						verified: null,
+						message,
+					},
 				};
 			}
 
@@ -103,11 +114,21 @@ export function register_context_export_tool(pi: ExtensionAPI): void {
 					? ' Reconstruction hash did not match the stored source; this source may have been captured by an older non-lossless chunker.'
 					: '';
 
-			const limited = limit_chat_output(
-				`Exported ${exported.chunks.length} chunk(s) from ${params.source_id} to ${file_path}.${verification}`,
-			);
 			return {
-				content: [{ type: 'text' as const, text: limited.text }],
+				content: [
+					{
+						type: 'text' as const,
+						text: `Exported ${exported.chunks.length} chunk(s) from ${params.source_id} to ${file_path}.${verification}`,
+					},
+				],
+				structuredContent: {
+					count: exported.chunks.length,
+					exported: true,
+					file_path,
+					bytes: Buffer.byteLength(exported.content, 'utf8'),
+					verified: exported.verified,
+					message: verification.trim(),
+				},
 				details: {
 					count: exported.chunks.length,
 					exported: true,

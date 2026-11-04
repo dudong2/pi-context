@@ -1,11 +1,11 @@
+function escape_regexp(value) {
+    return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
 function chunk_reference_to_ordinal(source_id, chunk_id) {
     const trimmed = chunk_id.trim();
-    const legacy_prefix = `${source_id}:chunk:`;
-    if (trimmed.startsWith(legacy_prefix)) {
-        const digits = trimmed.slice(legacy_prefix.length);
-        if (!/^\d+$/.test(digits))
-            return null;
-        const value = Number.parseInt(digits, 10);
+    const legacy_match = new RegExp(`^${escape_regexp(source_id)}:chunk:(\\d+)$`).exec(trimmed);
+    if (legacy_match) {
+        const value = Number.parseInt(legacy_match[1], 10);
         if (!Number.isSafeInteger(value))
             return null;
         return value <= 0 ? 1 : value;
@@ -120,7 +120,6 @@ export function context_store_get(store, source_id, chunk_id, options = {}) {
 		WHERE ${filters.join(' AND ')}
 		ORDER BY context_chunks.ordinal
 	`);
-    // SAFETY: the SELECT aliases and scalar columns above match ContextChunk.
     return stmt.all(...params);
 }
 //# sourceMappingURL=retrieval.js.map

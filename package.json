@@ -1,7 +1,7 @@
 {
   "name": "@dudong2/pi-context",
-  "version": "0.1.0",
-  "description": "Hardened searchable SQLite sidecar for oversized Pi tool output",
+  "version": "0.3.0",
+  "description": "Searchable SQLite sidecar based on upstream pi-context 0.3.0",
   "keywords": ["pi", "pi-package", "context", "sqlite"],
   "homepage": "https://github.com/dudong2/pi-context#readme",
   "repository": {
@@ -39,8 +39,14 @@
     "@earendil-works/pi-coding-agent": "*",
     "typebox": "*"
   },
+  "dependencies": {
+    "@spences10/pi-redact": "0.0.15",
+    "@spences10/pi-settings": "0.1.0",
+    "@spences10/pi-sqlite-core": "0.0.2",
+    "@spences10/pi-tui-modal": "0.0.24"
+  },
   "devDependencies": {
-    "@earendil-works/pi-coding-agent": "0.84.2",
+    "@earendil-works/pi-coding-agent": "1.5.0",
     "@types/node": "^25.0.0",
     "@vitest/coverage-v8": "4.1.11",
     "eslint": "^9.0.0",

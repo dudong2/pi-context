@@ -1,5 +1,5 @@
-import { redact_metadata, redact_text } from './redaction.js';
-import { with_sqlite_transaction } from './sqlite.js';
+import { redact_text } from '@spences10/pi-redact';
+import { with_sqlite_transaction } from '@spences10/pi-sqlite-core';
 import { createHash, randomUUID } from 'node:crypto';
 import { existsSync, mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
@@ -20,7 +20,7 @@ export function get_context_store(options = {}) {
 export function maybe_store_context_output(input, options = {}) {
     return maybe_store_context_output_with_ctor(ContextStore, input, options);
 }
-const ContextStoreClass = class ContextStore {
+export class ContextStore {
     db_path;
     db;
     project_path;
@@ -29,9 +29,8 @@ const ContextStoreClass = class ContextStore {
     max_lines;
     constructor(options = {}) {
         this.db_path = options.db_path ?? default_context_db_path();
-        this.project_path =
-            redact_metadata(options.project_path ?? process.cwd()) ?? null;
-        this.session_id = redact_metadata(options.session_id ?? null) ?? null;
+        this.project_path = options.project_path ?? process.cwd();
+        this.session_id = options.session_id ?? null;
         const capture_limits = get_context_capture_limits();
         this.max_bytes = options.max_bytes ?? capture_limits.max_bytes;
         this.max_lines = options.max_lines ?? capture_limits.max_lines;
@@ -45,9 +44,9 @@ const ContextStoreClass = class ContextStore {
     }
     configure(options = {}) {
         if (options.project_path !== undefined)
-            this.project_path = redact_metadata(options.project_path) ?? null;
+            this.project_path = options.project_path;
         if (options.session_id !== undefined)
-            this.session_id = redact_metadata(options.session_id) ?? null;
+            this.session_id = options.session_id;
         const capture_limits = get_context_capture_limits();
         this.max_bytes = options.max_bytes ?? capture_limits.max_bytes;
         this.max_lines = options.max_lines ?? capture_limits.max_lines;
@@ -60,7 +59,7 @@ const ContextStoreClass = class ContextStore {
         }
         else if (options.session_id !== undefined) {
             where.push(`${alias}.session_id = ?`);
-            params.push(redact_metadata(options.session_id));
+            params.push(options.session_id);
         }
         else if (!options.global && this.session_id) {
             where.push(`${alias}.session_id = ?`);
@@ -71,7 +70,7 @@ const ContextStoreClass = class ContextStore {
         }
         else if (options.project_path !== undefined) {
             where.push(`${alias}.project_path = ?`);
-            params.push(redact_metadata(options.project_path));
+            params.push(options.project_path);
         }
         else if (!options.global &&
             where.length === 0 &&
@@ -112,11 +111,8 @@ const ContextStoreClass = class ContextStore {
         return row ?? null;
     }
     store(input) {
-        const text = redact_text(input.text).redacted;
-        const tool_name = redact_text(input.tool_name).redacted.slice(0, 200);
-        const input_summary = input.input_summary
-            ? redact_text(input.input_summary).redacted.slice(0, 500)
-            : null;
+        const redaction = redact_text(input.text);
+        const text = redaction.redacted;
         if (!input.force &&
             !should_index_text(text, {
                 max_bytes: this.max_bytes,
@@ -129,8 +125,8 @@ const ContextStoreClass = class ContextStore {
         const content_hash = createHash('sha256')
             .update(text)
             .digest('hex');
-        const session_id = redact_metadata(input.session_id ?? this.session_id) ?? null;
-        const project_path = redact_metadata(input.project_path ?? this.project_path) ?? null;
+        const session_id = input.session_id ?? this.session_id;
+        const project_path = input.project_path ?? this.project_path;
         const preview = make_preview(text);
         const duplicate = this.find_duplicate_source(content_hash, {
             project_path,
@@ -152,18 +148,14 @@ const ContextStoreClass = class ContextStore {
                 capture_max_bytes: this.max_bytes,
                 capture_max_lines: this.max_lines,
             };
-            const receipt = summarize_source(provisional, tool_name);
+            const receipt = summarize_source(provisional, input.tool_name);
             const returned_bytes = Buffer.byteLength(receipt, 'utf8');
             with_sqlite_transaction(this.db, () => {
                 this.db
                     .prepare('UPDATE context_sources SET returned_byte_count = returned_byte_count + ? WHERE id = ?')
                     .run(returned_bytes, duplicate.id);
             }, { operation: 'Update context receipt bytes' });
-            return this.enforce_storage_limit({
-                ...provisional,
-                receipt,
-                returned_bytes,
-            });
+            return { ...provisional, receipt, returned_bytes };
         }
         const source_id = `ctx_${Date.now().toString(36)}_${randomUUID().slice(0, 8)}`;
         const chunks = chunk_text(text, source_id);
@@ -181,8 +173,8 @@ const ContextStoreClass = class ContextStore {
         const update_returned = this.db.prepare(`
 			UPDATE context_sources SET returned_byte_count = ? WHERE id = ?
 		`);
-        const stored = with_sqlite_transaction(this.db, () => {
-            insert.run(source_id, session_id, project_path, tool_name, input_summary, created_at, bytes, lines, content_hash, preview_bytes);
+        return with_sqlite_transaction(this.db, () => {
+            insert.run(source_id, session_id, project_path, input.tool_name, input.input_summary ?? null, created_at, bytes, lines, content_hash, preview_bytes);
             for (const chunk of chunks) {
                 insert_chunk.run(chunk.id, chunk.source_id, chunk.ordinal, chunk.title, chunk.content, chunk.byte_count);
             }
@@ -200,34 +192,11 @@ const ContextStoreClass = class ContextStore {
                 capture_max_bytes: this.max_bytes,
                 capture_max_lines: this.max_lines,
             };
-            const receipt = summarize_source(provisional, tool_name);
+            const receipt = summarize_source(provisional, input.tool_name);
             const returned_bytes = Buffer.byteLength(receipt, 'utf8');
             update_returned.run(returned_bytes, source_id);
             return { ...provisional, receipt, returned_bytes };
         }, { operation: 'Store context output' });
-        return this.enforce_storage_limit(stored);
-    }
-    enforce_storage_limit(stored) {
-        const max_bytes = parse_context_retention_policy().max_bytes;
-        if (max_bytes === null)
-            return stored;
-        this.purge_to_max_stored_bytes(max_bytes);
-        const retained = this.db
-            .prepare('SELECT 1 as present FROM context_sources WHERE id = ?')
-            .get(stored.source_id);
-        if (retained)
-            return stored;
-        const receipt = [
-            '[context-sidecar:error] Oversized tool output was indexed but immediately evicted by the configured storage cap.',
-            `Configured maximum stored bytes: ${max_bytes}.`,
-            'Original output withheld from model context. Increase MY_PI_CONTEXT_MAX_MB or use a smaller source.',
-        ].join('\n');
-        return {
-            ...stored,
-            receipt,
-            returned_bytes: Buffer.byteLength(receipt, 'utf8'),
-            retained: false,
-        };
     }
     list(options = {}) {
         const limit = Math.max(1, Math.min(options.limit ?? 10, 50));
@@ -283,7 +252,6 @@ const ContextStoreClass = class ContextStore {
 			ORDER BY context_sources.created_at DESC
 			LIMIT ? OFFSET ?
 		`);
-        // SAFETY: the SELECT aliases and scalar columns above match ListRow exactly.
         return stmt.all(...params).map((row) => ({
             source_id: row.source_id,
             created_at: row.created_at,
@@ -317,7 +285,9 @@ const ContextStoreClass = class ContextStore {
         return results;
     }
     search_match(match, options, limit) {
-        const scoped = this.scoped_filter('context_sources', options);
+        const scoped = options.source_id
+            ? { where: [], params: [] }
+            : this.scoped_filter('context_sources', options);
         const filters = [...scoped.where];
         const params = [match, ...scoped.params];
         if (options.source_id) {
@@ -354,7 +324,6 @@ const ContextStoreClass = class ContextStore {
 			ORDER BY rank
 			LIMIT ?
 		`);
-        // SAFETY: the SELECT aliases and scalar columns above match SearchRow exactly.
         return stmt.all(...params).map((row) => ({
             source_id: row.id,
             chunk_id: row.chunk_id,
@@ -398,24 +367,6 @@ const ContextStoreClass = class ContextStore {
             .get(...params);
         return row?.content_hash ?? null;
     }
-    record_returned_bytes(source_ids, returned_bytes) {
-        const unique_ids = [...new Set(source_ids)];
-        if (unique_ids.length === 0 || returned_bytes <= 0)
-            return;
-        if (!Number.isSafeInteger(returned_bytes))
-            throw new RangeError('returned_bytes must be a positive safe integer');
-        const base = Math.floor(returned_bytes / unique_ids.length);
-        let remainder = returned_bytes % unique_ids.length;
-        const update = this.db.prepare('UPDATE context_sources SET returned_byte_count = returned_byte_count + ? WHERE id = ?');
-        with_sqlite_transaction(this.db, () => {
-            for (const source_id of unique_ids) {
-                const share = base + (remainder > 0 ? 1 : 0);
-                if (remainder > 0)
-                    remainder -= 1;
-                update.run(share, source_id);
-            }
-        }, { operation: 'Record context retrieval bytes' });
-    }
     stats(options = { global: true }) {
         return context_store_stats(this, options);
     }
@@ -434,6 +385,5 @@ const ContextStoreClass = class ContextStore {
     close() {
         this.db.close();
     }
-};
-export const ContextStore = ContextStoreClass;
+}
 //# sourceMappingURL=store.js.map

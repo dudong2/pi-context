@@ -2,7 +2,7 @@ import {
 	SQLITE_CONNECTION_PRAGMAS,
 	SQLITE_PERSISTENT_PRAGMAS,
 	with_sqlite_transaction,
-} from './sqlite.js';
+} from '@spences10/pi-sqlite-core';
 import { readFileSync } from 'node:fs';
 import type { DatabaseSync } from 'node:sqlite';
 
@@ -13,7 +13,9 @@ const SCHEMA = readFileSync(
 const LATEST_CONTEXT_SCHEMA_VERSION = 1;
 const PERSISTENT_PRAGMAS = SQLITE_PERSISTENT_PRAGMAS;
 const CONNECTION_PRAGMAS = SQLITE_CONNECTION_PRAGMAS;
-const MIGRATIONS = new Map<number, string>([[1, SCHEMA]]);
+const MIGRATIONS: Record<number, string> = {
+	1: SCHEMA,
+};
 
 function get_user_version(db: DatabaseSync): number {
 	const row = db.prepare('PRAGMA user_version').get() as {
@@ -39,7 +41,7 @@ export function apply_schema(db: DatabaseSync): void {
 		next_version <= LATEST_CONTEXT_SCHEMA_VERSION;
 		next_version++
 	) {
-		const migration = MIGRATIONS.get(next_version);
+		const migration = MIGRATIONS[next_version];
 		if (!migration) {
 			db.close();
 			throw new Error(

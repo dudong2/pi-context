@@ -2,35 +2,45 @@ import type { ExtensionAPI } from '@earendil-works/pi-coding-agent';
 import { Type } from 'typebox';
 import { format_get_result } from '../context-format.js';
 import { scope_from_context } from '../context-scope.js';
-import { limit_chat_output } from '../output-limits.js';
 import { get_context_store } from '../store.js';
+import {
+	context_get_output_schema,
+	context_tool_namespace,
+} from './output-schemas.js';
 
 export function register_context_get_tool(pi: ExtensionAPI): void {
 	pi.registerTool({
 		name: 'context_get',
+		namespace: context_tool_namespace,
+		outputSchema: context_get_output_schema,
+		annotations: {
+			readOnlyHint: true,
+			destructiveHint: false,
+			openWorldHint: false,
+		},
 		label: 'Context Get',
 		description:
-			'Retrieve focused chunks from the local SQLite context sidecar by source_id plus chunk_id. Chat retrieval requires chunk_id; use context_export for a full source.',
+			'Retrieve focused chunks from the local SQLite context sidecar. Normally pass source_id plus chunk_id and use before/after neighbors; omitting chunk_id retrieves the full source into chat.',
 		promptSnippet:
-			'Retrieve focused stored output; context_get requires chunk_id and context_export handles broad/full retrieval',
+			'Retrieve focused stored output chunks by source_id plus chunk_id; use before/after neighbors, avoid full-source chat retrieval',
 		parameters: Type.Object({
 			source_id: Type.String({ description: 'Indexed source id' }),
-			chunk_id: Type.String({
-				description:
-					'Exact chunk id or ordinal. Required for bounded chat retrieval; use context_export for a full source.',
-			}),
+			chunk_id: Type.Optional(
+				Type.String({
+					description:
+						'Exact chunk id or ordinal. Recommended for normal focused retrieval; omit only for exceptional full-source chat retrieval.',
+				}),
+			),
 			before: Type.Optional(
-				Type.Integer({
-					minimum: 0,
-					maximum: 3,
-					description: 'Include up to 3 chunks before chunk_id.',
+				Type.Number({
+					description:
+						'When chunk_id is set, include up to this many chunks before it (max 3). Prefer 1 first; use context_export for broad ranges.',
 				}),
 			),
 			after: Type.Optional(
-				Type.Integer({
-					minimum: 0,
-					maximum: 3,
-					description: 'Include up to 3 chunks after chunk_id.',
+				Type.Number({
+					description:
+						'When chunk_id is set, include up to this many chunks after it (max 3). Prefer 1 first; use context_export for broad ranges.',
 				}),
 			),
 			global: Type.Optional(
@@ -40,24 +50,15 @@ export function register_context_get_tool(pi: ExtensionAPI): void {
 				}),
 			),
 		}),
-		async execute(...args) {
-			const [, params, , , ctx] = args;
-			if (!params.chunk_id) {
-				const text =
-					'chunk_id is required for bounded chat retrieval. Use context_list or context_search to find a chunk id, or context_export for the full source.';
-				return {
-					content: [{ type: 'text' as const, text }],
-					details: { count: 0, bounded: true },
-				};
-			}
+		async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
 			const scope = scope_from_context(ctx);
 			const store = get_context_store(scope);
 			const scope_options = {
+				...(params.global ? {} : scope),
 				global: params.global,
 				before: params.before,
 				after: params.after,
 			};
-			if (!params.global) Object.assign(scope_options, scope);
 			const chunks = store.get(
 				params.source_id,
 				params.chunk_id,
@@ -67,25 +68,18 @@ export function register_context_get_tool(pi: ExtensionAPI): void {
 				chunks.length === 0
 					? store.chunk_summary(params.source_id, scope_options)
 					: null;
-			const limited = limit_chat_output(
-				format_get_result(
-					params.source_id,
-					params.chunk_id,
-					chunks,
-					summary,
-				),
+			const text = format_get_result(
+				params.source_id,
+				params.chunk_id,
+				chunks,
+				summary,
 			);
-			if (chunks.length > 0) {
-				store.record_returned_bytes(
-					[params.source_id],
-					Buffer.byteLength(limited.text, 'utf8'),
-				);
-			}
 			return {
-				content: [{ type: 'text' as const, text: limited.text }],
-				details: {
-					count: chunks.length,
-					truncated: limited.truncated,
+				content: [{ type: 'text' as const, text }],
+				details: { count: chunks.length },
+				structuredContent: {
+					chunks: chunks.map((chunk) => ({ ...chunk })),
+					message: chunks.length === 0 ? text : '',
 				},
 			};
 		},

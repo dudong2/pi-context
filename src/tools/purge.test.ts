@@ -79,27 +79,4 @@ describe('context_purge tool', () => {
 			}),
 		).toEqual([]);
 	});
-
-	it('rejects negative and fractional destructive age filters', async () => {
-		process.env.MY_PI_CONTEXT_DB = temp_db();
-		set_context_sidecar_enabled(true, {
-			db_path: process.env.MY_PI_CONTEXT_DB,
-		});
-		const stored = get_context_store().store({
-			text: `keep-token\n${'x '.repeat(400)}`,
-			tool_name: 'bash',
-			force: true,
-		});
-		const tool = register_tool();
-
-		await expect(
-			tool.execute('call', { older_than_days: -1, global: true }),
-		).rejects.toThrow('older_than_days');
-		await expect(
-			tool.execute('call', { older_than_days: 1.5, global: true }),
-		).rejects.toThrow('older_than_days');
-		expect(
-			get_context_store().get(stored!.source_id, undefined, { global: true }),
-		).not.toEqual([]);
-	});
 });

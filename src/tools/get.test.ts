@@ -63,20 +63,21 @@ describe('context_get tool', () => {
 		const tool = register_tool();
 
 		expect(tool.description).toContain('source_id plus chunk_id');
-		expect(tool.description).toContain('requires chunk_id');
-		expect(tool.promptSnippet).toContain('requires chunk_id');
+		expect(tool.description).toContain('omitting chunk_id');
+		expect(tool.description).toContain('full source into chat');
+		expect(tool.promptSnippet).toContain(
+			'avoid full-source chat retrieval',
+		);
+		expect(tool.parameters.properties.chunk_id.description).toContain(
+			'exceptional full-source chat retrieval',
+		);
 
-		const before = get_context_store().stats({ global: true }).bytes_returned;
 		const found = await tool.execute('call', {
 			source_id: stored!.source_id,
-			chunk_id: stored!.first_chunk_id,
 			global: true,
 		});
 		expect(found.content[0].text).toContain('get-token');
 		expect(found.details).toMatchObject({ count: 1 });
-		expect(
-			get_context_store().stats({ global: true }).bytes_returned,
-		).toBeGreaterThan(before);
 
 		const missing = await tool.execute('call', {
 			source_id: stored!.source_id,
@@ -85,29 +86,5 @@ describe('context_get tool', () => {
 		});
 		expect(missing.content[0].text).toContain('No chunk found');
 		expect(missing.details).toMatchObject({ count: 0 });
-	});
-
-	it('does not return a full 256 KiB source when chunk_id is omitted', async () => {
-		process.env.MY_PI_CONTEXT_DB = temp_db();
-		set_context_sidecar_enabled(true, {
-			db_path: process.env.MY_PI_CONTEXT_DB,
-		});
-		const stored = get_context_store().store({
-			text: `${'bounded retrieval line\n'.repeat(12_000)}`,
-			tool_name: 'bash',
-			force: true,
-		});
-		const tool = register_tool();
-
-		const result = await tool.execute('call', {
-			source_id: stored!.source_id,
-			global: true,
-		});
-		const text = result.content[0].text;
-
-		expect(text).toContain('chunk_id');
-		expect(Buffer.byteLength(text, 'utf8')).toBeLessThanOrEqual(50 * 1024);
-		expect(text.split('\n').length).toBeLessThanOrEqual(2_000);
-		expect(text).not.toContain('bounded retrieval line\nbounded retrieval line\n');
 	});
 });

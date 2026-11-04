@@ -2,12 +2,22 @@ import type { ExtensionAPI } from '@earendil-works/pi-coding-agent';
 import { Type } from 'typebox';
 import { format_list_results } from '../context-format.js';
 import { scope_from_context } from '../context-scope.js';
-import { limit_chat_output } from '../output-limits.js';
 import { get_context_store } from '../store.js';
+import {
+	context_list_output_schema,
+	context_tool_namespace,
+} from './output-schemas.js';
 
 export function register_context_list_tool(pi: ExtensionAPI): void {
 	pi.registerTool({
 		name: 'context_list',
+		namespace: context_tool_namespace,
+		outputSchema: context_list_output_schema,
+		annotations: {
+			readOnlyHint: true,
+			destructiveHint: false,
+			openWorldHint: false,
+		},
 		label: 'Context List',
 		description:
 			'List indexed sources in the local SQLite context sidecar.',
@@ -27,29 +37,20 @@ export function register_context_list_tool(pi: ExtensionAPI): void {
 				Type.String({ description: 'Limit to one session id' }),
 			),
 			newer_than_days: Type.Optional(
-				Type.Integer({
-					minimum: 0,
+				Type.Number({
 					description: 'Only sources newer than N days',
 				}),
 			),
 			older_than_days: Type.Optional(
-				Type.Integer({
-					minimum: 0,
+				Type.Number({
 					description: 'Only sources older than N days',
 				}),
 			),
 			limit: Type.Optional(
-				Type.Integer({
-					minimum: 1,
-					maximum: 50,
-					description: 'Maximum sources, default 10',
-				}),
+				Type.Number({ description: 'Maximum sources, default 10' }),
 			),
 			offset: Type.Optional(
-				Type.Integer({
-					minimum: 0,
-					description: 'Pagination offset, default 0',
-				}),
+				Type.Number({ description: 'Pagination offset, default 0' }),
 			),
 			global: Type.Optional(
 				Type.Boolean({
@@ -58,8 +59,7 @@ export function register_context_list_tool(pi: ExtensionAPI): void {
 				}),
 			),
 		}),
-		async execute(...args) {
-			const [, params, , , ctx] = args;
+		async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
 			const scope = scope_from_context(ctx);
 			const has_explicit_scope =
 				params.project_path !== undefined ||
@@ -81,12 +81,16 @@ export function register_context_list_tool(pi: ExtensionAPI): void {
 				limit: params.limit,
 				offset: params.offset,
 			});
-			const limited = limit_chat_output(format_list_results(results));
 			return {
-				content: [{ type: 'text' as const, text: limited.text }],
-				details: {
-					count: results.length,
-					truncated: limited.truncated,
+				content: [
+					{
+						type: 'text' as const,
+						text: format_list_results(results),
+					},
+				],
+				details: { count: results.length },
+				structuredContent: {
+					sources: results.map((result) => ({ ...result })),
 				},
 			};
 		},

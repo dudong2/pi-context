@@ -26,8 +26,7 @@ export function parse_context_retention_policy(
 			parse_boolean_env(env.MY_PI_CONTEXT_PURGE_ON_SHUTDOWN) ??
 			fallback.purge_on_shutdown,
 		max_mb,
-		max_bytes:
-			max_mb === null ? null : Math.floor(max_mb * 1024 * 1024),
+		max_bytes: max_mb === null ? null : max_mb * 1024 * 1024,
 	};
 }
 

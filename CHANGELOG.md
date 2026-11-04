@@ -1,14 +1,31 @@
-# @dudong2/pi-context
+# @spences10/pi-context
 
-## 0.1.0
+## 0.3.0
 
-- Forked `@spences10/pi-context@0.1.16` into an independent package.
-- Added worker-isolated linear-time redaction and fail-closed capture.
-- Enforced structured receipt identity, mixed-content preservation, scoped source search, bounded retrieval, immediate quotas, explicit DB closure, and retrieval accounting.
-- Removed runtime coupling to upstream redaction, settings, SQLite helper, modal UI, and eval packages.
-- Included prebuilt `dist/` artifacts for Pi's `npm install --omit=dev` Git installer.
+### Minor Changes
 
-## Upstream history (`@spences10/pi-context`)
+- 3e180e8: Breaking: codemode now returns objects; preserve
+  intermediates, defer maintenance, shorten receipts, and document
+  reproducible benchmarks.
+
+## 0.2.1
+
+### Patch Changes
+
+- 2dc4d54: Preserve oversized failed tool diagnostics in session
+  history instead of replacing them with expiring receipts.
+
+## 0.2.0
+
+### Minor Changes
+
+- efe01c2: Run my-pi on upstream Pi with /extensions toggles; drop
+  code upstream now covers.
+
+### Patch Changes
+
+- Updated dependencies [efe01c2]
+  - @spences10/pi-settings@0.1.0
 
 ## 0.1.16
 
@@ -136,7 +153,7 @@
 - d158bf5: Default context_export to managed sidecar export directory
   with retention cleanup for old exported files.
 
-## Upstream 0.1.0
+## 0.1.0
 
 ### Minor Changes
 

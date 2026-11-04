@@ -1,8 +1,7 @@
-import { with_sqlite_busy_retry } from '../sqlite.js';
+import { with_sqlite_busy_retry } from '@spences10/pi-sqlite-core';
 import { existsSync, statSync } from 'node:fs';
 import type { DatabaseSync } from 'node:sqlite';
 import { parse_context_retention_policy } from '../policy.js';
-import { redact_metadata } from '../redaction.js';
 import type {
 	ContextCleanupResult,
 	ContextPurgeDetails,
@@ -144,8 +143,6 @@ export function context_store_purge_to_max_stored_bytes(
 	store: ContextStoreMaintenanceTarget,
 	max_bytes: number,
 ): number {
-	if (!Number.isSafeInteger(max_bytes) || max_bytes < 0)
-		throw new RangeError('max_bytes must be a non-negative safe integer');
 	const total_row = store.db
 		.prepare(
 			'SELECT COALESCE(SUM(byte_count), 0) as bytes FROM context_sources',
@@ -195,18 +192,16 @@ export function context_store_purge_with_details(
 		filters.push('project_path IS NULL');
 	} else if (options.project_path !== undefined) {
 		filters.push('project_path = ?');
-		params.push(redact_metadata(options.project_path));
+		params.push(options.project_path);
 	}
 	if (options.session_id === null) {
 		filters.push('session_id IS NULL');
 	} else if (options.session_id !== undefined) {
 		filters.push('session_id = ?');
-		params.push(redact_metadata(options.session_id));
+		params.push(options.session_id);
 	}
 	const days = options.older_than_days;
 	if (days !== undefined) {
-		if (!Number.isSafeInteger(days) || days < 0)
-			throw new RangeError('older_than_days must be a non-negative integer');
 		const cutoff = Date.now() - days * 24 * 60 * 60 * 1000;
 		filters.push('created_at < ?');
 		params.push(cutoff);

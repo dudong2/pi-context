@@ -6,11 +6,17 @@ export { count_lines, DEFAULT_CONTEXT_MAX_BYTES, DEFAULT_CONTEXT_MAX_LINES, esca
 export type { ContextChunk, ContextChunkSelectionOptions, ContextChunkSummary, ContextCleanupResult, ContextExportContent, ContextListResult, ContextPurgeDetails, ContextRetentionPolicy, ContextScopeOptions, ContextSearchResult, ContextStats, ContextStoreOptions, StoreContextInput, StoredContextOutput, } from './types.js';
 export declare function get_context_store(options?: ContextStoreOptions): ContextStore;
 export declare function maybe_store_context_output(input: StoreContextInput, options?: ContextStoreOptions): StoredContextOutput | null;
-export interface ContextStore {
+export declare class ContextStore {
     readonly db_path: string;
     db: DatabaseSync;
+    private project_path;
+    private session_id;
+    private max_bytes;
+    private max_lines;
+    constructor(options?: ContextStoreOptions);
     configure(options?: ContextStoreOptions): void;
     scoped_filter(alias: string, options?: ContextScopeOptions): ScopedFilter;
+    private find_duplicate_source;
     store(input: StoreContextInput): StoredContextOutput | null;
     list(options?: ContextScopeOptions & {
         source_id?: string;
@@ -26,10 +32,11 @@ export interface ContextStore {
         tool_name?: string;
         full_content?: boolean;
     }): ContextSearchResult[];
+    private search_match;
     chunk_summary(source_id: string, options?: ContextScopeOptions): ContextChunkSummary | null;
     get(source_id: string, chunk_id?: string, options?: ContextChunkSelectionOptions): ContextChunk[];
     export_content(source_id: string, chunk_id?: string, options?: ContextChunkSelectionOptions): ContextExportContent;
-    record_returned_bytes(source_ids: string[], returned_bytes: number): void;
+    private source_content_hash;
     stats(options?: ContextScopeOptions): ContextStats;
     cleanup(policy?: ContextRetentionPolicy): ContextCleanupResult;
     purge_to_max_stored_bytes(max_bytes: number): number;
@@ -43,7 +50,3 @@ export interface ContextStore {
     }): ContextPurgeDetails;
     close(): void;
 }
-interface ContextStoreConstructor {
-    new (options?: ContextStoreOptions): ContextStore;
-}
-export declare const ContextStore: ContextStoreConstructor;

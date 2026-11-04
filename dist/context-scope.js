@@ -1,18 +1,15 @@
-import { redact_text } from './redaction.js';
 export function is_text_content(item) {
-    return item.type === 'text';
+    return (!!item &&
+        typeof item === 'object' &&
+        item.type === 'text' &&
+        typeof item.text === 'string');
 }
 export function summarize_tool_input(input) {
-    if (!input)
+    if (!input || typeof input !== 'object')
         return null;
     try {
         const json = JSON.stringify(input);
-        if (!json)
-            return null;
-        const redacted = redact_text(json).redacted;
-        return redacted.length > 500
-            ? `${redacted.slice(0, 497)}...`
-            : redacted;
+        return json.length > 500 ? `${json.slice(0, 497)}...` : json;
     }
     catch {
         return null;
@@ -24,8 +21,9 @@ export function should_skip_tool(tool_name) {
     //   recurse and make the sidecar harder to reason about.
     // - Team Mode lists are bounded at source, while unusually large full-detail
     //   results use this generic overflow path so they do not flood model context.
-    // Structured, source-verified receipt details prevent duplicate capture;
-    // ordinary payload text is never trusted as a receipt marker.
+    // - Pi native MCP tool results use this generic overflow path like other
+    //   tools. Text that already holds a [context-sidecar] receipt is not
+    //   indexed again.
     return tool_name.startsWith('context_');
 }
 export function session_id_from_context(ctx) {

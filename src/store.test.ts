@@ -1,3 +1,4 @@
+import { SqliteBusyError } from '@spences10/pi-sqlite-core';
 import { existsSync, readFileSync } from 'node:fs';
 import { DatabaseSync } from 'node:sqlite';
 import {
@@ -80,15 +81,15 @@ describe('ContextStore', () => {
 		const exec = vi.fn(() => {
 			throw busy_error;
 		});
-		// SAFETY: this test replaces only DatabaseSync.exec with a compatible spy.
-		(store as unknown as { db: { exec: typeof exec } }).db.exec = exec;
+		(store as unknown as { db: { exec: typeof exec } }).db.exec =
+			exec;
 
 		expect(() =>
 			store.store({
 				tool_name: 'bash',
 				text: 'x'.repeat(100),
 			}),
-		).toThrow('could not acquire the database lock');
+		).toThrow(SqliteBusyError);
 		expect(exec).toHaveBeenCalledTimes(3);
 	});
 
@@ -103,26 +104,27 @@ describe('ContextStore', () => {
 
 		expect(stored?.source_id).toMatch(/^ctx_/);
 		expect(stored?.receipt).toContain('context-sidecar');
-		expect(stored?.receipt).toContain('Project:');
-		expect(stored?.receipt).toContain('Session:');
+		expect(stored?.receipt).not.toContain('Project:');
+		expect(stored?.receipt).not.toContain('Session:');
+		expect(Buffer.byteLength(stored!.receipt, 'utf8')).toBeLessThan(
+			1400,
+		);
 		expect(stored?.receipt).toContain('Captured:');
 		expect(stored?.receipt).toContain('exceeds 10 B');
-		expect(stored?.receipt).toContain('Next actions:');
 		expect(stored?.receipt).toContain(
-			`context_search query:"..." source_id:"${stored!.source_id}"`,
-		);
-		expect(stored?.receipt).toContain('before:1 after:1');
-		expect(stored?.receipt).toContain(
-			`context_export source_id:"${stored!.source_id}"`,
+			'Search snippets with context_search',
 		);
 		expect(stored?.receipt).toContain(
-			'Avoid full context_get without chunk_id',
+			'context_get for focused chunks',
+		);
+		expect(stored?.receipt).toContain(
+			'context_export for broad processing',
 		);
 		expect(stored?.receipt).toContain(
 			`First chunk id: ${stored!.source_id}_0001`,
 		);
 		expect(stored?.first_chunk_id).toBe(`${stored!.source_id}_0001`);
-		expect(stored?.receipt).toContain('context_list');
+		expect(stored?.receipt).not.toContain('Next actions:');
 		expect(stored?.receipt).toContain('Preview:');
 		expect(stored?.chunk_count).toBeGreaterThan(1);
 
@@ -693,7 +695,7 @@ describe('ContextStore', () => {
 		expect(stats.newest_created_at).toBeGreaterThan(0);
 	});
 
-	it('can disable age cleanup and keeps max stored bytes enforced immediately', () => {
+	it('can disable age cleanup with zero retention and cleanup by max stored bytes', () => {
 		process.env.MY_PI_CONTEXT_RETENTION_DAYS = '0';
 		process.env.MY_PI_CONTEXT_MAX_MB = '0.001';
 		const store = create_store({ max_bytes: 10 });
@@ -723,10 +725,7 @@ describe('ContextStore', () => {
 		expect(policy.retention_days).toBeNull();
 		const cleanup = store.cleanup(policy);
 		expect(cleanup.age_deleted).toBe(0);
-		expect(cleanup.size_deleted).toBe(0);
-		expect(store.stats({ global: true }).bytes_stored).toBeLessThanOrEqual(
-			policy.max_bytes!,
-		);
+		expect(cleanup.size_deleted).toBeGreaterThan(0);
 		expect(store.list({ global: true }).length).toBeLessThan(2);
 	});
 

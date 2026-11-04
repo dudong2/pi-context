@@ -69,7 +69,6 @@ describe('context_search tool', () => {
 		});
 		const tool = register_tool();
 
-		const before = get_context_store().stats({ global: true }).bytes_returned;
 		const result = await tool.execute('call', {
 			query: 'token',
 			global: true,
@@ -86,34 +85,5 @@ describe('context_search tool', () => {
 		expect(result.content[0].text).toContain('alpha-token');
 		expect(result.content[0].text).toContain('beta-token');
 		expect(result.details.count).toBe(2);
-		expect(
-			get_context_store().stats({ global: true }).bytes_returned,
-		).toBeGreaterThan(before);
-	});
-
-	it('hard-caps full-content search output', async () => {
-		process.env.MY_PI_CONTEXT_DB = temp_db();
-		set_context_sidecar_enabled(true, {
-			db_path: process.env.MY_PI_CONTEXT_DB,
-		});
-		for (let index = 0; index < 25; index++) {
-			get_context_store().store({
-				text: `cap-token source-${index} ${'word '.repeat(780)}`,
-				tool_name: 'bash',
-				force: true,
-			});
-		}
-		const tool = register_tool();
-
-		const result = await tool.execute('call', {
-			query: 'cap-token',
-			global: true,
-			full_content: true,
-			limit: 25,
-		});
-		const text = result.content[0].text;
-
-		expect(Buffer.byteLength(text, 'utf8')).toBeLessThanOrEqual(50 * 1024);
-		expect(text.split('\n').length).toBeLessThanOrEqual(2_000);
 	});
 });

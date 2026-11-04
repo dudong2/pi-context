@@ -2,12 +2,22 @@ import type { ExtensionAPI } from '@earendil-works/pi-coding-agent';
 import { Type } from 'typebox';
 import { format_search_results } from '../context-format.js';
 import { scope_from_context } from '../context-scope.js';
-import { limit_chat_output } from '../output-limits.js';
 import { get_context_store } from '../store.js';
+import {
+	context_search_output_schema,
+	context_tool_namespace,
+} from './output-schemas.js';
 
 export function register_context_search_tool(pi: ExtensionAPI): void {
 	pi.registerTool({
 		name: 'context_search',
+		namespace: context_tool_namespace,
+		outputSchema: context_search_output_schema,
+		annotations: {
+			readOnlyHint: true,
+			destructiveHint: false,
+			openWorldHint: false,
+		},
 		label: 'Context Search',
 		description:
 			'Search large tool output stored in the local SQLite context sidecar. Use this snippet-first before retrieving chunks; reserve full_content:true for small matched chunks, not broad retrieval.',
@@ -24,9 +34,7 @@ export function register_context_search_tool(pi: ExtensionAPI): void {
 				Type.String({ description: 'Limit to one tool name' }),
 			),
 			limit: Type.Optional(
-				Type.Integer({
-					minimum: 1,
-					maximum: 25,
+				Type.Number({
 					description: 'Maximum chunks to return, default 5',
 				}),
 			),
@@ -43,31 +51,26 @@ export function register_context_search_tool(pi: ExtensionAPI): void {
 				}),
 			),
 		}),
-		async execute(...args) {
-			const [, params, , , ctx] = args;
+		async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
 			const scope = scope_from_context(ctx);
-			const store = get_context_store(scope);
-			const search_options = {
+			const results = get_context_store(scope).search(params.query, {
+				...(params.global ? {} : scope),
 				global: params.global,
 				source_id: params.source_id,
 				tool_name: params.tool_name,
 				limit: params.limit,
 				full_content: params.full_content,
-			};
-			if (!params.global) Object.assign(search_options, scope);
-			const results = store.search(params.query, search_options);
-			const limited = limit_chat_output(format_search_results(results));
-			if (results.length > 0) {
-				store.record_returned_bytes(
-					results.map((result) => result.source_id),
-					Buffer.byteLength(limited.text, 'utf8'),
-				);
-			}
+			});
 			return {
-				content: [{ type: 'text' as const, text: limited.text }],
-				details: {
-					count: results.length,
-					truncated: limited.truncated,
+				content: [
+					{
+						type: 'text' as const,
+						text: format_search_results(results),
+					},
+				],
+				details: { count: results.length },
+				structuredContent: {
+					results: results.map((result) => ({ ...result })),
 				},
 			};
 		},

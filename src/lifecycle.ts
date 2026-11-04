@@ -1,81 +1,17 @@
-import type {
-	ExtensionAPI,
-	ToolResultEvent,
-} from '@earendil-works/pi-coding-agent';
+import type { ExtensionAPI } from '@earendil-works/pi-coding-agent';
 import {
 	is_text_content,
 	scope_from_context,
 	should_skip_tool,
 	summarize_tool_input,
 } from './context-scope.js';
-import { fail_closed_receipt, limit_chat_output } from './output-limits.js';
-import {
-	cancel_context_persistence_workers,
-	persist_context_output,
-} from './persistence.js';
 import {
 	get_context_store,
+	maybe_store_context_output,
 	set_context_sidecar_enabled,
 	should_index_text,
 } from './store.js';
-
-interface ContextSidecarMarker {
-	version?: number;
-	kind?: string;
-	sourceId?: string;
-}
-
-interface ContextSidecarDetails {
-	contextSidecar: ContextSidecarMarker;
-}
-
-function receipt_source_id(
-	details: ContextSidecarDetails | null | undefined,
-): string | null {
-	const marker = details?.contextSidecar;
-	return marker?.version === 1 && marker.kind === 'receipt'
-		? (marker.sourceId ?? null)
-		: null;
-}
-
-function is_verified_receipt(
-	event: ToolResultEvent,
-	scope: ReturnType<typeof scope_from_context>,
-): boolean {
-	// SAFETY: receipt_source_id validates every optional marker field before use.
-	const source_id = receipt_source_id(
-		event.details as ContextSidecarDetails | null | undefined,
-	);
-	if (!source_id || event.content.length !== 1) return false;
-	const item = event.content[0];
-	if (
-		!is_text_content(item) ||
-		!item.text.startsWith('[context-sidecar]') ||
-		!item.text.includes(`Source: ${source_id}`)
-	)
-		return false;
-	try {
-		return get_context_store(scope).chunk_summary(source_id, scope) !== null;
-	} catch {
-		return false;
-	}
-}
-
-function replace_text_items(
-	content: ToolResultEvent['content'],
-	primary: string,
-	additional: string,
-): ToolResultEvent['content'] {
-	let replaced = false;
-	return content.map((item) => {
-		if (!is_text_content(item)) return item;
-		if (!replaced) {
-			replaced = true;
-			return { ...item, text: primary };
-		}
-		return { ...item, text: additional };
-	});
-}
+import { select_context_output } from './tool-output.js';
 
 export function register_context_lifecycle(pi: ExtensionAPI): void {
 	set_context_sidecar_enabled(true, { project_path: process.cwd() });
@@ -87,7 +23,6 @@ export function register_context_lifecycle(pi: ExtensionAPI): void {
 	});
 
 	pi.on('session_shutdown', async () => {
-		cancel_context_persistence_workers();
 		const store = get_context_store();
 		const stats = store.stats();
 		if (stats.purge_on_shutdown) store.cleanup();
@@ -95,63 +30,38 @@ export function register_context_lifecycle(pi: ExtensionAPI): void {
 	});
 
 	pi.on('tool_result', async (event, ctx) => {
+		// Nested results belong to the calling tool, not the model transcript.
+		if (event.isError || event.parentToolCallId) return;
+
 		const tool_name = String(event.toolName ?? 'tool');
 		if (should_skip_tool(tool_name)) return;
 		if (!Array.isArray(event.content)) return;
 
-		const scope = scope_from_context(ctx);
-		if (is_verified_receipt(event, scope)) return;
 		const text_items = event.content.filter(is_text_content);
 		if (text_items.length === 0) return;
-		const text = text_items.map((item) => item.text).join('\n');
+		const visible_text = text_items
+			.map((item) => item.text)
+			.join('\n');
+		if (visible_text.includes('[context-sidecar]')) return;
+		const text = select_context_output(event, visible_text);
 		if (!should_index_text(text)) return;
 
 		try {
-			const stored = await persist_context_output(
-				{
-					text,
-					tool_name,
-					input_summary: summarize_tool_input(event.input),
-					force: true,
-					...scope,
-				},
-				scope,
-				ctx?.signal,
-			);
-			if (!stored) throw new Error('Forced persistence returned no source');
-			const receipt = limit_chat_output(stored.receipt).text;
-			const details: ContextSidecarDetails = {
-				contextSidecar: {
-					version: 1,
-					kind: stored.retained === false ? 'error' : 'receipt',
-					sourceId:
-						stored.retained === false ? undefined : stored.source_id,
-				},
-			};
+			const stored = maybe_store_context_output({
+				text,
+				tool_name,
+				input_summary: summarize_tool_input(event.input),
+				...scope_from_context(ctx),
+			});
+			if (!stored) return;
 			return {
-				content: replace_text_items(
-					event.content,
-					receipt,
-					'',
-				),
-				details,
+				content: [
+					{ type: 'text' as const, text: stored.receipt },
+					...event.content.filter((item) => !is_text_content(item)),
+				],
 			};
-		} catch (error) {
-			const error_name = error instanceof Error ? error.name : 'UnknownError';
-			console.error(`[pi-context] persistence failed (${error_name}); oversized output withheld`);
-			const receipt = fail_closed_receipt(tool_name);
-			const details: ContextSidecarDetails = {
-				contextSidecar: { version: 1, kind: 'error' },
-			};
-			return {
-				content: replace_text_items(
-					event.content,
-					receipt,
-					'',
-				),
-				details,
-				isError: true,
-			};
+		} catch {
+			return;
 		}
 	});
 }

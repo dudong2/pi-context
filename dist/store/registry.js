@@ -3,18 +3,6 @@ import { join } from 'node:path';
 let global_options = {};
 let global_enabled = false;
 let global_store = null;
-function close_global_store() {
-    const store = global_store;
-    global_store = null;
-    if (!store)
-        return;
-    try {
-        store.close();
-    }
-    catch {
-        // The public store may already have been explicitly closed by a caller.
-    }
-}
 export function default_context_db_path() {
     if (process.env.MY_PI_CONTEXT_DB)
         return process.env.MY_PI_CONTEXT_DB;
@@ -26,7 +14,7 @@ export function set_context_sidecar_enabled(enabled, options = {}) {
     global_enabled = enabled;
     if (!enabled) {
         global_options = {};
-        close_global_store();
+        global_store = null;
         return;
     }
     global_options = { ...global_options, ...options };
@@ -38,7 +26,6 @@ export function get_context_store(StoreCtor, options = {}) {
     const merged = { ...global_options, ...options };
     const db_path = merged.db_path ?? default_context_db_path();
     if (!global_store || global_store.db_path !== db_path) {
-        close_global_store();
         global_store = new StoreCtor({ ...merged, db_path });
     }
     else {
