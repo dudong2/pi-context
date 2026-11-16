@@ -1,6 +1,8 @@
 import { with_sqlite_busy_retry } from '@spences10/pi-sqlite-core';
 import { existsSync, statSync } from 'node:fs';
+import * as v from 'valibot';
 import { parse_context_retention_policy } from '../policy.js';
+import { chunk_count_row_schema, source_size_row_schema, source_stats_row_schema, stored_bytes_row_schema, } from './row-schemas.js';
 function file_size(path) {
     return existsSync(path) ? statSync(path).size : 0;
 }
@@ -9,7 +11,7 @@ function count_stats(store, options) {
     const where_clause = scoped.where.length
         ? `WHERE ${scoped.where.join(' AND ')}`
         : '';
-    const source = store.db
+    const source = v.parse(source_stats_row_schema, store.db
         .prepare(`
 			SELECT
 				COUNT(*) as sources,
@@ -20,15 +22,15 @@ function count_stats(store, options) {
 			FROM context_sources
 			${where_clause}
 		`)
-        .get(...scoped.params);
-    const chunks = store.db
+        .get(...scoped.params));
+    const chunks = v.parse(chunk_count_row_schema, store.db
         .prepare(`
 			SELECT COUNT(context_chunks.id) as chunks
 			FROM context_chunks
 			JOIN context_sources ON context_sources.id = context_chunks.source_id
 			${where_clause}
 		`)
-        .get(...scoped.params);
+        .get(...scoped.params));
     return { ...source, chunks: chunks.chunks };
 }
 export function context_store_stats(store, options = { global: true }) {
@@ -85,15 +87,15 @@ export function context_store_cleanup(store, policy = parse_context_retention_po
     };
 }
 export function context_store_purge_to_max_stored_bytes(store, max_bytes) {
-    const total_row = store.db
+    const total_row = v.parse(stored_bytes_row_schema, store.db
         .prepare('SELECT COALESCE(SUM(byte_count), 0) as bytes FROM context_sources')
-        .get();
+        .get());
     let total = total_row.bytes;
     if (total <= max_bytes)
         return 0;
-    const rows = store.db
+    const rows = v.parse(v.array(source_size_row_schema), store.db
         .prepare('SELECT id, byte_count FROM context_sources ORDER BY created_at ASC')
-        .all();
+        .all());
     const delete_source = store.db.prepare('DELETE FROM context_sources WHERE id = ?');
     let deleted = 0;
     for (const row of rows) {

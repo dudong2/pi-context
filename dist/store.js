@@ -4,6 +4,8 @@ import { createHash, randomUUID } from 'node:crypto';
 import { existsSync, mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
+import * as v from 'valibot';
+import { content_hash_row_schema, duplicate_source_row_schema, list_row_schema, search_row_schema, } from './store/row-schemas.js';
 import { get_context_capture_limits } from './config.js';
 import { parse_context_retention_policy } from './policy.js';
 import { apply_schema } from './schema.js';
@@ -90,7 +92,7 @@ export class ContextStore {
             content_hash,
             ...scoped.params,
         ];
-        const row = this.db
+        const row = v.parse(v.optional(duplicate_source_row_schema), this.db
             .prepare(`
 				SELECT
 					context_sources.id,
@@ -107,7 +109,7 @@ export class ContextStore {
 				ORDER BY context_sources.created_at DESC
 				LIMIT 1
 			`)
-            .get(...params);
+            .get(...params));
         return row ?? null;
     }
     store(input) {
@@ -252,7 +254,9 @@ export class ContextStore {
 			ORDER BY context_sources.created_at DESC
 			LIMIT ? OFFSET ?
 		`);
-        return stmt.all(...params).map((row) => ({
+        return v
+            .parse(v.array(list_row_schema), stmt.all(...params))
+            .map((row) => ({
             source_id: row.source_id,
             created_at: row.created_at,
             project_path: row.project_path,
@@ -324,7 +328,9 @@ export class ContextStore {
 			ORDER BY rank
 			LIMIT ?
 		`);
-        return stmt.all(...params).map((row) => ({
+        return v
+            .parse(v.array(search_row_schema), stmt.all(...params))
+            .map((row) => ({
             source_id: row.id,
             chunk_id: row.chunk_id,
             ordinal: row.ordinal,
@@ -362,9 +368,9 @@ export class ContextStore {
             source_id,
             ...scoped.params,
         ];
-        const row = this.db
+        const row = v.parse(v.optional(content_hash_row_schema), this.db
             .prepare(`SELECT content_hash FROM context_sources WHERE ${filters.join(' AND ')} LIMIT 1`)
-            .get(...params);
+            .get(...params));
         return row?.content_hash ?? null;
     }
     stats(options = { global: true }) {

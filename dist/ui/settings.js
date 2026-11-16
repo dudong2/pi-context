@@ -174,7 +174,7 @@ async function show_context_preset_settings(ctx) {
         })),
         footer: 'enter applies preset • esc back',
     });
-    if (!selected)
+    if (!selected || !is_context_settings_preset(selected))
         return;
     save_context_settings(ctx, context_settings_from_preset(selected));
 }

@@ -1,7 +1,7 @@
 import { show_confirm_modal, show_picker_modal, } from '@spences10/pi-tui-modal';
 import { format_list_results, format_purge_details, } from '../context-format.js';
 import { scope_from_context } from '../context-scope.js';
-import { get_context_store } from '../store.js';
+import { get_context_store, } from '../store.js';
 import { show_context_settings, show_context_stats, show_context_text_modal, } from './settings.js';
 export async function show_context_list(ctx, limit) {
     const scope = scope_from_context(ctx);
@@ -16,9 +16,11 @@ export async function show_context_list(ctx, limit) {
 export async function purge_context(ctx, options = {}) {
     const policy = get_context_store().stats();
     const days = options.older_than_days ?? policy.retention_days ?? 14;
-    const description = options.expired
-        ? 'Delete expired context sources now?'
-        : options.source_id
+    let description;
+    if (options.expired)
+        description = 'Delete expired context sources now?';
+    else
+        description = options.source_id
             ? `Delete context source ${options.source_id}?`
             : `Delete context sources older than ${days} day(s)?`;
     const confirmed = ctx.hasUI
@@ -31,9 +33,11 @@ export async function purge_context(ctx, options = {}) {
     if (!confirmed)
         return;
     const scope = scope_from_context(ctx);
-    const details = options.expired
-        ? { deleted: get_context_store(scope).cleanup().deleted }
-        : get_context_store(scope).purge_with_details({
+    let details;
+    if (options.expired)
+        details = { deleted: get_context_store(scope).cleanup().deleted };
+    else
+        details = get_context_store(scope).purge_with_details({
             ...scope,
             older_than_days: options.source_id ? undefined : days,
             source_id: options.source_id,

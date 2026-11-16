@@ -1,4 +1,4 @@
-import { is_text_content, scope_from_context, should_skip_tool, summarize_tool_input, } from './context-scope.js';
+import { scope_from_context, should_skip_tool, summarize_tool_input, } from './context-scope.js';
 import { get_context_store, maybe_store_context_output, set_context_sidecar_enabled, should_index_text, } from './store.js';
 import { select_context_output } from './tool-output.js';
 export function register_context_lifecycle(pi) {
@@ -24,7 +24,7 @@ export function register_context_lifecycle(pi) {
             return;
         if (!Array.isArray(event.content))
             return;
-        const text_items = event.content.filter(is_text_content);
+        const text_items = event.content.filter((item) => item.type === 'text');
         if (text_items.length === 0)
             return;
         const visible_text = text_items
@@ -39,7 +39,7 @@ export function register_context_lifecycle(pi) {
             const stored = maybe_store_context_output({
                 text,
                 tool_name,
-                input_summary: summarize_tool_input(event.input),
+                input_summary: summarize_tool_input(event),
                 ...scope_from_context(ctx),
             });
             if (!stored)
@@ -47,7 +47,7 @@ export function register_context_lifecycle(pi) {
             return {
                 content: [
                     { type: 'text', text: stored.receipt },
-                    ...event.content.filter((item) => !is_text_content(item)),
+                    ...event.content.filter((item) => item.type !== 'text'),
                 ],
             };
         }

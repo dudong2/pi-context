@@ -2,6 +2,27 @@ import { read_package_settings, write_package_settings, } from '@spences10/pi-se
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync, } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
+import * as v from 'valibot';
+const context_settings_preset_schema = v.picklist([
+    'default',
+    'light',
+    'balanced',
+    'research',
+    'archive',
+]);
+const positive_number_schema = v.pipe(v.number(), v.finite(), v.minValue(Number.MIN_VALUE));
+// Invalid fields fall back independently to the selected preset below.
+const context_settings_input_schema = v.pipe(v.unknown(), v.check((value) => !Array.isArray(value)), v.object({
+    preset: v.fallback(v.optional(v.union([
+        context_settings_preset_schema,
+        v.literal('custom'),
+    ])), undefined),
+    retention_days: v.fallback(v.optional(v.nullable(positive_number_schema)), undefined),
+    max_mb: v.fallback(v.optional(v.nullable(positive_number_schema)), undefined),
+    purge_on_shutdown: v.fallback(v.optional(v.boolean()), undefined),
+    capture_max_bytes: v.fallback(v.optional(positive_number_schema), undefined),
+    capture_max_lines: v.fallback(v.optional(positive_number_schema), undefined),
+}));
 export const DEFAULT_CONTEXT_CAPTURE_MAX_BYTES = 24 * 1024;
 export const DEFAULT_CONTEXT_CAPTURE_MAX_LINES = 300;
 export const CONTEXT_SETTINGS_PRESETS = {
@@ -81,14 +102,17 @@ export function context_settings_from_preset(preset) {
 export function load_context_settings_config() {
     const path = get_context_settings_config_path();
     try {
-        const parsed = (process.env.MY_PI_CONTEXT_CONFIG
-            ? existsSync(path)
+        let raw;
+        if (process.env.MY_PI_CONTEXT_CONFIG)
+            raw = existsSync(path)
                 ? JSON.parse(readFileSync(path, 'utf-8'))
-                : null
-            : read_package_settings('context', null));
-        if (!parsed)
+                : null;
+        else
+            raw = read_package_settings('context', null);
+        const parsed = v.safeParse(context_settings_input_schema, raw);
+        if (!parsed.success)
             return null;
-        return normalize_context_settings_config(parsed);
+        return normalize_context_settings_config(parsed.output);
     }
     catch {
         return null;
@@ -120,9 +144,7 @@ export function get_context_capture_limits(env = process.env) {
 export function normalize_context_settings_config(value) {
     const preset = is_context_settings_preset(value.preset)
         ? value.preset
-        : value.preset === 'custom'
-            ? 'custom'
-            : 'custom';
+        : 'custom';
     const base = preset !== 'custom'
         ? context_settings_from_preset(preset)
         : DEFAULT_CONTEXT_SETTINGS;
@@ -131,7 +153,7 @@ export function normalize_context_settings_config(value) {
         preset,
         retention_days: normalize_optional_positive_number(value.retention_days, base.retention_days),
         max_mb: normalize_optional_positive_number(value.max_mb, base.max_mb),
-        purge_on_shutdown: typeof value.purge_on_shutdown === 'boolean'
+        purge_on_shutdown: v.is(v.boolean(), value.purge_on_shutdown)
             ? value.purge_on_shutdown
             : base.purge_on_shutdown,
         capture_max_bytes: normalize_positive_number(value.capture_max_bytes, base.capture_max_bytes),
@@ -139,20 +161,15 @@ export function normalize_context_settings_config(value) {
     };
 }
 export function is_context_settings_preset(value) {
-    return (typeof value === 'string' &&
-        Object.hasOwn(CONTEXT_SETTINGS_PRESETS, value));
+    return v.is(context_settings_preset_schema, value);
 }
 function normalize_optional_positive_number(value, fallback) {
-    if (value === null)
-        return null;
-    if (typeof value !== 'number')
-        return fallback;
-    return Number.isFinite(value) && value > 0 ? value : fallback;
+    const parsed = v.safeParse(v.nullable(positive_number_schema), value);
+    return parsed.success ? parsed.output : fallback;
 }
 function normalize_positive_number(value, fallback) {
-    if (typeof value !== 'number')
-        return fallback;
-    return Number.isFinite(value) && value > 0 ? value : fallback;
+    const parsed = v.safeParse(positive_number_schema, value);
+    return parsed.success ? parsed.output : fallback;
 }
 function parse_positive_number_env(value, fallback) {
     if (value === undefined || value.trim() === '')

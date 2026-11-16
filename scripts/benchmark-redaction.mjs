@@ -1,7 +1,7 @@
 import { Buffer } from 'node:buffer';
 import { performance } from 'node:perf_hooks';
 import process from 'node:process';
-import { redact_text } from '../dist/redaction.js';
+import { redact_text } from '@spences10/pi-redact';
 
 const payload = 'a'.repeat(256 * 1024);
 redact_text('warmup');

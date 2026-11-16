@@ -1,3 +1,5 @@
+import * as v from 'valibot';
+import { chunk_ordinal_row_schema, chunk_summary_row_schema, context_chunk_schema, } from './row-schemas.js';
 function escape_regexp(value) {
     return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
@@ -22,7 +24,7 @@ export function context_store_chunk_summary(store, source_id, options = {}) {
         source_id,
         ...scoped.params,
     ];
-    const row = store.db
+    const row = v.parse(v.optional(chunk_summary_row_schema), store.db
         .prepare(`
 			SELECT
 				context_sources.id as source_id,
@@ -44,7 +46,7 @@ export function context_store_chunk_summary(store, source_id, options = {}) {
 			WHERE ${filters.join(' AND ')}
 			GROUP BY context_sources.id
 		`)
-        .get(...params);
+        .get(...params));
     return row ?? null;
 }
 const MAX_NEIGHBOR_CHUNKS = 3;
@@ -63,7 +65,7 @@ function resolve_chunk_ordinal(store, source_id, chunk_id, options) {
         'context_chunks.id = ?',
         ...scoped.where,
     ];
-    const row = store.db
+    const row = v.parse(v.optional(chunk_ordinal_row_schema), store.db
         .prepare(`
 			SELECT context_chunks.ordinal
 			FROM context_chunks
@@ -71,7 +73,7 @@ function resolve_chunk_ordinal(store, source_id, chunk_id, options) {
 			WHERE ${filters.join(' AND ')}
 			LIMIT 1
 		`)
-        .get(source_id, chunk_id, ...scoped.params);
+        .get(source_id, chunk_id, ...scoped.params));
     return row?.ordinal ?? null;
 }
 export function context_store_get(store, source_id, chunk_id, options = {}) {
@@ -120,6 +122,6 @@ export function context_store_get(store, source_id, chunk_id, options = {}) {
 		WHERE ${filters.join(' AND ')}
 		ORDER BY context_chunks.ordinal
 	`);
-    return stmt.all(...params);
+    return v.parse(v.array(context_chunk_schema), stmt.all(...params));
 }
 //# sourceMappingURL=retrieval.js.map

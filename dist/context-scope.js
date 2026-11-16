@@ -1,14 +1,6 @@
-export function is_text_content(item) {
-    return (!!item &&
-        typeof item === 'object' &&
-        item.type === 'text' &&
-        typeof item.text === 'string');
-}
-export function summarize_tool_input(input) {
-    if (!input || typeof input !== 'object')
-        return null;
+export function summarize_tool_input(event) {
     try {
-        const json = JSON.stringify(input);
+        const json = JSON.stringify(event.input);
         return json.length > 500 ? `${json.slice(0, 497)}...` : json;
     }
     catch {

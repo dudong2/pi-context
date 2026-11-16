@@ -95,9 +95,6 @@ export function run_capture_evals(results) {
         result_count: 3,
     });
 }
-function store_db(store) {
-    return Reflect.get(store, 'db');
-}
 export function run_retention_evals(store, results) {
     const old = store.store({
         text: `old-retention-token\n${'o '.repeat(500)}`,
@@ -111,7 +108,7 @@ export function run_retention_evals(store, results) {
     });
     if (!old || !fresh)
         throw new Error('Failed to seed retention eval');
-    with_sqlite_busy_retry(() => store_db(store)
+    with_sqlite_busy_retry(() => store.db
         .prepare('UPDATE context_sources SET created_at = ? WHERE id = ?')
         .run(Date.now() - 10 * 24 * 60 * 60 * 1000, old.source_id), { operation: 'Seed context retention eval' });
     const cleanup = store.cleanup({
