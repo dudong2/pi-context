@@ -229,6 +229,10 @@ export class ContextStore {
 	store(input: StoreContextInput): StoredContextOutput | null {
 		const redaction = redact_text(input.text);
 		const text = redaction.redacted;
+		const tool_name = redact_text(input.tool_name).redacted;
+		const input_summary = input.input_summary == null
+			? null
+			: redact_text(input.input_summary).redacted;
 
 		if (
 			!input.force &&
@@ -273,7 +277,7 @@ export class ContextStore {
 				capture_max_lines: this.max_lines,
 			};
 
-			const receipt = summarize_source(provisional, input.tool_name);
+			const receipt = summarize_source(provisional, tool_name);
 			const returned_bytes = Buffer.byteLength(receipt, 'utf8');
 			with_sqlite_transaction(
 				this.db,
@@ -287,7 +291,7 @@ export class ContextStore {
 				{ operation: 'Update context receipt bytes' },
 			);
 
-			return { ...provisional, receipt, returned_bytes };
+			return this.enforce_storage_limit({ ...provisional, receipt, returned_bytes });
 		}
 
 		const source_id = `ctx_${Date.now().toString(36)}_${randomUUID().slice(0, 8)}`;
@@ -310,15 +314,15 @@ export class ContextStore {
 			UPDATE context_sources SET returned_byte_count = ? WHERE id = ?
 		`);
 
-		return with_sqlite_transaction(
+		const stored = with_sqlite_transaction(
 			this.db,
 			() => {
 				insert.run(
 					source_id,
 					session_id,
 					project_path,
-					input.tool_name,
-					input.input_summary ?? null,
+					tool_name,
+					input_summary,
 					created_at,
 					bytes,
 					lines,
@@ -354,7 +358,7 @@ export class ContextStore {
 
 				const receipt = summarize_source(
 					provisional,
-					input.tool_name,
+					tool_name,
 				);
 
 				const returned_bytes = Buffer.byteLength(receipt, 'utf8');
@@ -364,6 +368,15 @@ export class ContextStore {
 			},
 			{ operation: 'Store context output' },
 		);
+		return this.enforce_storage_limit(stored);
+	}
+
+	private enforce_storage_limit(stored: StoredContextOutput): StoredContextOutput | null {
+		const max_bytes = parse_context_retention_policy().max_bytes;
+		if (max_bytes === null) return stored;
+		this.purge_to_max_stored_bytes(max_bytes);
+		// Do not return a receipt pointing to a source the quota just evicted.
+		return this.chunk_summary(stored.source_id, { global: true }) ? stored : null;
 	}
 
 	list(
@@ -497,9 +510,7 @@ export class ContextStore {
 		},
 		limit: number,
 	): ContextSearchResult[] {
-		const scoped = options.source_id
-			? { where: [], params: [] }
-			: this.scoped_filter('context_sources', options);
+		const scoped = this.scoped_filter('context_sources', options);
 
 		const filters: string[] = [...scoped.where];
 		const params: Array<string | number> = [match, ...scoped.params];
@@ -654,6 +665,6 @@ export class ContextStore {
 	}
 
 	close(): void {
-		this.db.close();
+		if (this.db.isOpen) this.db.close();
 	}
 }

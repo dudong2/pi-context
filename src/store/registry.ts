@@ -33,6 +33,7 @@ export function set_context_sidecar_enabled(
 	global_enabled = enabled;
 
 	if (!enabled) {
+		global_store?.close();
 		global_options = {};
 		global_store = null;
 
@@ -54,6 +55,8 @@ export function get_context_store(
 	const db_path = merged.db_path ?? default_context_db_path();
 
 	if (!global_store || global_store.db_path !== db_path) {
+		global_store?.close();
+		global_store = null;
 		global_store = new StoreCtor({ ...merged, db_path });
 	} else {
 		global_store.configure(merged);

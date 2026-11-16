@@ -756,7 +756,7 @@ describe('ContextStore', () => {
 
 	it('can disable age cleanup with zero retention and cleanup by max stored bytes', () => {
 		process.env.MY_PI_CONTEXT_RETENTION_DAYS = '0';
-		process.env.MY_PI_CONTEXT_MAX_MB = '0.001';
+		delete process.env.MY_PI_CONTEXT_MAX_MB;
 		const store = create_store({ max_bytes: 10 });
 
 		const old_source = store.store({
@@ -784,6 +784,8 @@ describe('ContextStore', () => {
 			close_db(db);
 		}
 
+		// Simulate existing data when the user lowers the storage cap.
+		process.env.MY_PI_CONTEXT_MAX_MB = '0.001';
 		const policy = parse_context_retention_policy();
 		expect(policy.retention_days).toBeNull();
 		const cleanup = store.cleanup(policy);
