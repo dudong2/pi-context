@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { create_context_store, temp_db } from '../test/support.js';
 import { redact_text } from '@spences10/pi-redact';
 import { get_context_store, set_context_sidecar_enabled } from './store.js';
+import { summarize_tool_input } from './context-scope.js';
 import { register_context_search_tool } from './tools/search.js';
 
 const original_db = process.env.MY_PI_CONTEXT_DB;
@@ -26,6 +27,19 @@ describe('minimal upstream patches', () => {
 		const row = store.db.prepare('SELECT input_summary, tool_name FROM context_sources WHERE id=?').get(source.source_id);
 		expect(JSON.stringify(row)).not.toContain(secret);
 		expect(store.get(source.source_id).map(chunk => chunk.content).join('')).not.toContain(secret);
+	});
+
+	it('redacts assignments inside JSON summary values, including before truncation', () => {
+		const secret = 'SyntheticNestedCanaryPassword123!';
+		const input = { nested: [{ command: `PASSWORD=${secret}` }], password: secret };
+		const store = create_context_store({ max_bytes: 1 });
+		const source = store.store({ text: 'metadata payload', tool_name: 'bash', input_summary: JSON.stringify(input), force: true })!;
+		const row = store.db.prepare('SELECT input_summary FROM context_sources WHERE id=?').get(source.source_id);
+		expect(JSON.stringify(row)).not.toContain(secret);
+		const summary = summarize_tool_input({ input: { command: `PASSWORD=${secret}\n${'ordinary '.repeat(100)}` } })!;
+		expect(summary.length).toBeLessThanOrEqual(500);
+		expect(summary).not.toContain(secret);
+		expect(summary).toContain('[REDACTED:');
 	});
 
 	it('keeps source-id search scoped unless global access is explicit', () => {

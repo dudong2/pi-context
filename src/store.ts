@@ -12,6 +12,7 @@ import {
 	search_row_schema,
 } from './store/row-schemas.js';
 import { get_context_capture_limits } from './config.js';
+import { redact_input_summary } from './context-scope.js';
 import { parse_context_retention_policy } from './policy.js';
 import { apply_schema } from './schema.js';
 import {
@@ -232,7 +233,7 @@ export class ContextStore {
 		const tool_name = redact_text(input.tool_name).redacted;
 		const input_summary = input.input_summary == null
 			? null
-			: redact_text(input.input_summary).redacted;
+			: redact_input_summary(input.input_summary);
 
 		if (
 			!input.force &&

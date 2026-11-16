@@ -1,6 +1,19 @@
+import { redact_text } from '@spences10/pi-redact';
+export function redact_input_summary(text) {
+    let value;
+    try {
+        value = JSON.parse(text);
+    }
+    catch {
+        return redact_text(text).redacted;
+    }
+    // Decode strings before scanning, then scan the serialized fields as well.
+    const json = JSON.stringify(value, (_key, item) => typeof item === 'string' ? redact_text(item).redacted : item);
+    return redact_text(json).redacted;
+}
 export function summarize_tool_input(event) {
     try {
-        const json = JSON.stringify(event.input);
+        const json = redact_input_summary(JSON.stringify(event.input));
         return json.length > 500 ? `${json.slice(0, 497)}...` : json;
     }
     catch {

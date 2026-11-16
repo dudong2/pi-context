@@ -1,14 +1,29 @@
+import { redact_text } from '@spences10/pi-redact';
 import type {
 	ExtensionCommandContext,
 	ToolResultEvent,
 } from '@earendil-works/pi-coding-agent';
 import type { ContextScopeOptions } from './store.js';
 
+export function redact_input_summary(text: string): string {
+	let value: unknown;
+	try {
+		value = JSON.parse(text);
+	} catch {
+		return redact_text(text).redacted;
+	}
+	// Decode strings before scanning, then scan the serialized fields as well.
+	const json = JSON.stringify(value, (_key, item: unknown) =>
+		typeof item === 'string' ? redact_text(item).redacted : item,
+	);
+	return redact_text(json).redacted;
+}
+
 export function summarize_tool_input(
 	event: Pick<ToolResultEvent, 'input'>,
 ): string | null {
 	try {
-		const json = JSON.stringify(event.input);
+		const json = redact_input_summary(JSON.stringify(event.input));
 
 		return json.length > 500 ? `${json.slice(0, 497)}...` : json;
 	} catch {
